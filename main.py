@@ -6,6 +6,7 @@ Prefix commands still work with ~
 
 import discord
 from discord.ext import commands
+import discord.app_commands as app_commands
 import logging
 import json
 import os
@@ -21,6 +22,27 @@ logging.basicConfig(
 log = logging.getLogger("OmniBot")
 
 intents = discord.Intents.all()
+
+# Your user ID for error DMs and fallback owner check
+OWNER_ID = 1077905352244338688
+
+
+# Custom owner check that also includes the hardcoded OWNER_ID
+def is_owner():
+    async def predicate(ctx):
+        return ctx.author.id in set(Config.OWNER_IDS) or ctx.author.id == OWNER_ID
+    return commands.check(predicate)
+
+
+async def send_dm_to_owner(bot, content: str):
+    """Send a DM to the bot owner."""
+    try:
+        owner = await bot.fetch_user(OWNER_ID)
+        # Split content if too long (Discord DM limit 2000 chars)
+        for chunk in [content[i:i+1990] for i in range(0, len(content), 1990)]:
+            await owner.send(chunk)
+    except Exception as e:
+        log.error(f"Failed to DM owner: {e}")
 
 
 def save_guild_names(guilds):
@@ -79,17 +101,27 @@ class OmniBot(commands.Bot):
             "cogs.antinuke"
         ]
 
-        failed = []
+        loaded_cogs = []
+        failed_cogs = []
+        
         for cog in cogs:
             try:
                 await self.load_extension(cog)
                 log.info(f"Loaded cog: {cog}")
+                loaded_cogs.append(cog)
             except Exception as e:
-                failed.append(cog)
-                log.error(f"Failed to load {cog}: {e}\n{traceback.format_exc()}")
+                error_msg = f"Failed to load {cog}: {e}\n{traceback.format_exc()}"
+                log.error(error_msg)
+                failed_cogs.append((cog, error_msg))
+                # DM owner about the failure
+                await send_dm_to_owner(self, f"❌ Cog load failed: `{cog}`\n```py\n{error_msg[:1900]}\n```")
 
-        if failed:
-            log.warning(f"Cogs that failed to load: {failed}")
+        # Send success summary to owner
+        if loaded_cogs:
+            await send_dm_to_owner(self, f"✅ Loaded cogs: {', '.join(loaded_cogs)}")
+        
+        if failed_cogs:
+            await send_dm_to_owner(self, f"⚠️ Failed cogs: {', '.join([c[0] for c in failed_cogs])}")
 
         # ----------------------------------------------------------------
         # Slash command sync strategy:
@@ -111,15 +143,21 @@ class OmniBot(commands.Bot):
             try:
                 synced = await self.tree.sync(guild=guild_obj)
                 log.info(f"DEV: Synced {len(synced)} slash commands to guild {dev_guild_id} (instant).")
+                await send_dm_to_owner(self, f"📡 Synced {len(synced)} commands to guild `{dev_guild_id}` (instant)")
             except Exception as e:
-                log.error(f"Guild slash command sync failed: {e}")
+                error_msg = f"Guild slash command sync failed: {e}\n{traceback.format_exc()}"
+                log.error(error_msg)
+                await send_dm_to_owner(self, f"❌ Command sync failed:\n```py\n{error_msg[:1900]}\n```")
         else:
             # Global sync — propagates to all guilds within ~1 hour
             try:
                 synced = await self.tree.sync()
                 log.info(f"PROD: Synced {len(synced)} slash commands globally (~1 hour to propagate).")
+                await send_dm_to_owner(self, f"📡 Synced {len(synced)} global commands (may take up to 1h to appear)")
             except Exception as e:
-                log.error(f"Slash command sync failed: {e}")
+                error_msg = f"Slash command sync failed: {e}\n{traceback.format_exc()}"
+                log.error(error_msg)
+                await send_dm_to_owner(self, f"❌ Global command sync failed:\n```py\n{error_msg[:1900]}\n```")
 
     async def on_ready(self):
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
@@ -132,9 +170,120 @@ class OmniBot(commands.Bot):
             ),
             status=discord.Status.online,
         )
+        
+        # DM owner with owner IDs loaded from config
+        owner_ids_str = ", ".join(str(oid) for oid in self.owner_ids) if self.owner_ids else "EMPTY"
+        await send_dm_to_owner(self, f"✅ Bot online.\nOwner IDs from config: `{owner_ids_str}`\nHardcoded OWNER_ID: `{OWNER_ID}`")
+
+        # Setup owner commands after bot is ready
+        await self.setup_owner_commands()
 
     async def on_guild_join(self, guild):
         save_guild_names(self.guilds)
+        await send_dm_to_owner(self, f"➕ Bot joined new guild: `{guild.name}` (ID: {guild.id})")
+
+    async def setup_owner_commands(self):
+        """Setup owner-only prefix commands for debugging."""
+        
+        @self.command(name="reload")
+        @is_owner()   # custom check
+        async def reload_cmd(ctx, cog_name: str = None):
+            """Reload a cog (or all if none specified)."""
+            if cog_name is None:
+                # Reload all cogs
+                success = []
+                failed = []
+                for cog in [
+                    "cogs.moderation",
+                    "cogs.utility",
+                    "cogs.fun",
+                    "cogs.economy",
+                    "cogs.leveling",
+                    "cogs.automod",
+                    "cogs.logging_cog",
+                    "cogs.tickets",
+                    "cogs.welcome",
+                    "cogs.giveaway",
+                    "cogs.reaction_roles",
+                    "cogs.ai",
+                    "cogs.invite_tracking",
+                    "cogs.reports",
+                    "cogs.jtc",
+                    "cogs.admin",
+                    "cogs.embed",
+                    "cogs.mc",
+                    "cogs.application",
+                    "cogs.youtube",
+                    "cogs.antinuke"
+                ]:
+                    try:
+                        await self.reload_extension(cog)
+                        success.append(cog)
+                    except Exception as e:
+                        failed.append(f"{cog}: {e}")
+                
+                await ctx.send(f"✅ Reloaded: {', '.join(success) if success else 'none'}\n❌ Failed: {', '.join(failed) if failed else 'none'}")
+                
+                # Resync commands
+                dev_guild_id = getattr(Config, "DEV_GUILD_ID", None)
+                if dev_guild_id:
+                    await self.tree.sync(guild=discord.Object(id=dev_guild_id))
+                    await ctx.send(f"🔄 Commands re-synced to guild {dev_guild_id}")
+                else:
+                    await self.tree.sync()
+                    await ctx.send("🔄 Global commands re-synced (may take up to 1h)")
+            else:
+                # Reload a single cog
+                cog_path = f"cogs.{cog_name}" if not cog_name.startswith("cogs.") else cog_name
+                try:
+                    await self.reload_extension(cog_path)
+                    await ctx.send(f"✅ Reloaded `{cog_path}`")
+                    
+                    # Resync commands
+                    dev_guild_id = getattr(Config, "DEV_GUILD_ID", None)
+                    if dev_guild_id:
+                        await self.tree.sync(guild=discord.Object(id=dev_guild_id))
+                        await ctx.send(f"🔄 Commands re-synced to guild {dev_guild_id}")
+                    else:
+                        await self.tree.sync()
+                        await ctx.send("🔄 Global commands re-synced (may take up to 1h)")
+                except Exception as e:
+                    await ctx.send(f"❌ Error: {e}")
+
+        @self.command(name="sync")
+        @is_owner()
+        async def sync_cmd(ctx):
+            """Manually sync slash commands."""
+            try:
+                dev_guild_id = getattr(Config, "DEV_GUILD_ID", None)
+                if dev_guild_id:
+                    guild = discord.Object(id=dev_guild_id)
+                    synced = await self.tree.sync(guild=guild)
+                    await ctx.send(f"✅ Synced {len(synced)} guild commands to `{dev_guild_id}`")
+                else:
+                    synced = await self.tree.sync()
+                    await ctx.send(f"✅ Synced {len(synced)} global commands (may take up to 1h to appear)")
+            except Exception as e:
+                await ctx.send(f"❌ Sync failed: {e}")
+
+        @self.command(name="cogs")
+        @is_owner()
+        async def list_cogs_cmd(ctx):
+            """List all loaded cogs."""
+            loaded = list(self.cogs.keys())
+            await ctx.send(f"📦 Loaded cogs ({len(loaded)}):\n{', '.join(loaded)}")
+
+        @self.command(name="ownerinfo")
+        @is_owner()
+        async def ownerinfo_cmd(ctx):
+            """Debug: show owner IDs and your ID."""
+            config_owners = ", ".join(str(oid) for oid in self.owner_ids) if self.owner_ids else "None"
+            await ctx.send(
+                f"**Config OWNER_IDS:** {config_owners}\n"
+                f"**Hardcoded OWNER_ID:** {OWNER_ID}\n"
+                f"**Your ID:** {ctx.author.id}\n"
+                f"**Is owner?** {ctx.author.id in self.owner_ids or ctx.author.id == OWNER_ID}"
+            )
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, commands.CommandNotFound):
@@ -154,8 +303,10 @@ class OmniBot(commands.Bot):
         elif isinstance(error, commands.CheckFailure):
             await ctx.reply("You don't have access to this command.", mention_author=False)
         else:
-            log.error(f"Unhandled error in {ctx.command}: {error}", exc_info=error)
-            await ctx.reply("An unexpected error occurred.", mention_author=False)
+            error_msg = f"Unhandled error in {ctx.command}: {error}\n{traceback.format_exc()}"
+            log.error(error_msg)
+            await send_dm_to_owner(self, f"⚠️ Command error:\n```py\n{error_msg[:1900]}\n```")
+            await ctx.reply("An unexpected error occurred. The owner has been notified.", mention_author=False)
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         msg = "An error occurred."
@@ -166,7 +317,9 @@ class OmniBot(commands.Bot):
         elif isinstance(error, discord.app_commands.CommandOnCooldown):
             msg = f"Cooldown! Try again in `{error.retry_after:.1f}s`."
         else:
-            log.error(f"Slash command error: {error}\n{traceback.format_exc()}")
+            error_msg = f"Slash command error: {error}\n{traceback.format_exc()}"
+            log.error(error_msg)
+            await send_dm_to_owner(self, f"⚠️ Slash command error:\n```py\n{error_msg[:1900]}\n```")
             msg = f"Error: `{error}`"
         try:
             if interaction.response.is_done():
