@@ -9,7 +9,6 @@ class Config:
     OWNER_IDS   = [123456789012345678]
 
     # ── AI (Free forever) ─────────────────────────────
-    # Get free Gemini key at: https://aistudio.google.com/apikey
     GROQ_API_KEY = ""
 
     # ── Cookie API (for transcripts) ──────────────────
