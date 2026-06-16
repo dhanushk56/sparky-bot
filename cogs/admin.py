@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from config import Config
 from utils.data import load, save
 
-# ── Reset confirmation view ────────────────────────────
+# Reset confirmation view
 
 class ConfirmResetView(discord.ui.View):
     def __init__(self, guild_id: int, module: str, author_id: int):
