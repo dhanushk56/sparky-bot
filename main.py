@@ -214,7 +214,8 @@ class OmniBot(commands.Bot):
                     "cogs.mc",
                     "cogs.application",
                     "cogs.youtube",
-                    "cogs.antinuke"
+                    "cogs.antinuke",
+                    # "cogs.music"
                 ]:
                     try:
                         await self.reload_extension(cog)
