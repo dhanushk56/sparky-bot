@@ -1,0 +1,19 @@
+{
+  "1498158542140477543": {
+    "enabled": true,
+    "whitelist": [],
+    "owner_id": 1077905352244338688,
+    "thresholds": {
+      "ban": 5,
+      "kick": 5,
+      "channel_create": 3,
+      "channel_delete": 3,
+      "role_create": 3,
+      "role_delete": 3,
+      "webhook_create": 3
+    },
+    "punishment": "ban",
+    "duration": 1440,
+    "log_channel": null
+  }
+}

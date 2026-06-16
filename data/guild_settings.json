@@ -1,0 +1,26 @@
+{
+  "1498158542140477543": {
+    "logging": {
+      "channel": 1514833696526569492,
+      "enabled": true
+    },
+    "ticket_category": "Tickets",
+    "automod": {
+      "enabled": true,
+      "anti_spam": true,
+      "anti_invite": true,
+      "anti_links": true,
+      "caps_filter": true,
+      "module_whitelist": {
+        "anti_links": {
+          "users": [],
+          "roles": [],
+          "channels": [
+            1514790155343626240
+          ],
+          "categories": []
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "1498158542140477543": {
+    "testing": {
+      "name": "testing",
+      "description": "",
+      "log_channel": 1514833696526569492,
+      "grant_role": null,
+      "questions": [
+        {
+          "text": "What is your name?",
+          "type": "short_answer",
+          "options": [],
+          "required": true
+        },
+        {
+          "text": "What is your age?",
+          "type": "range",
+          "options": [],
+          "required": true,
+          "range_min": 1
+        }
+      ],
+      "open": true
+    }
+  }
+}
